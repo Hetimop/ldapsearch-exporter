@@ -1,56 +1,58 @@
-#!/bin/bash
+# BIND variables
+echo "début du scipt"
+date
+echo "" 
+srvldap=()
+whoami_file=/tmp/ldapwhoami.metrics
+search_file=/tmp/ldapsearch.metrics
+final_file=/app/metrics/final.metrics
+filtre=()
 
-while true; do
-# Nom du fichier de sortie
-filetmp="/app/metrics/tmp.metrics"
-filename="/app/metrics/ldapsearch.metrics"
-rm -f $filetmp
-touch $filetmp
 
-# Définition de la fonction pour la commande LDAP
-function ldapsearch_time {
-    local url="$1"
-    local filtre="$2"
-    local output="$3"
-    local real user sys 
+rm -f $search_file
+rm -f $whoami_file
 
-    # Test de connexion LDAP
-    if ! ldapwhoami -x -H "${url}" > /dev/null 2>&1; then
-        echo "Erreur: impossible de se connecter à ${url}"
-        return
-    fi
+# Test de connexion LDAP
+function fonction.ldapwhoami {
 
-    # Exécuter la commande et stocker le résultat dans une variable
-    TIMEFORMAT='%R %U %S';
-    {
-        res="$( { time ldapsearch -LLL -x -H "${url}" "${filtre}" ;} 2>&1 > /dev/null )"
-        read real user sys <<< "$res"
-        echo "ldap_search_uid_real{ldapsrv=\"$url\",filtre=\"$filtre\"} ${real/,/}" >> "$output"
-        echo "ldap_search_uid_user{ldapsrv=\"$url\",filtre=\"$filtre\"} ${user/,/}" >> "$output"
-        echo "ldap_search_uid_sys{ldapsrv=\"$url\",filtre=\"$filtre\"} ${sys/,/}" >> "$output"
-    }
+    for srv in "${srvldap[@]}"; do
+        if timeout 0.5 ldapwhoami -x -H "${srv}" > /dev/null 2>&1; then
+            echo "ldapwhoami_status{ldapsrv=\"$srv\"} 1" >> "$whoami_file"
+            srvldapwhoami+=("$srv")
+        else
+            echo "ldapwhoami_status{ldapsrv=\"$srv\"} 0" >> "$whoami_file"
+        fi
+    done
 }
 
-# URL du domaine LDAP
-urls=()
+fonction.ldapwhoami
 
-# Filtre LDAP à utiliser pour les requêtes
-filtres=()
-
-# Boucle pour effectuer une requête LDAP pour chaque filtre, pour chaque serveur de la liste
-for url in "${urls[@]}"; do
-if ldapwhoami -x -H "${url}" -o nettimeout=1 > /dev/null 2>&1; then
-    for filtre in "${filtres[@]}"; do
-        ldapsearch_time "$url" "$filtre" "$filetmp"
-    done
-else
-    echo "ldapwhoami_erreur{ldapsrv=\"$url\"} 1" >> "$filetmp"
-fi
-
+# time ldapsearch
+for srv in "${srvldapwhoami[@]}"; do
+    TIMEFORMAT='%R %U %S';
+    time_output=$( { time ldapsearch -LLL -x -H "${srv}" "${filtre}" > /dev/null; } 2>&1 )
+    if [ $? -eq 0 ]; then
+        # Récupérer les valeurs de temps de sortie
+        IFS=' ' read -ra times <<< $time_output
+        real_time=${times[0]}
+        user_time=${times[1]}
+        sys_time=${times[2]}
+        # Ajouter le nom du serveur à chaque ligne de sortie
+        echo "ldapsearch_time{ldapsrv=\"$srv\",metric=\"real_time\"} $real_time" >> "$search_file"     
+        echo "ldapsearch_time{ldapsrv=\"$srv\",metric=\"user_time\"} $user_time" >> "$search_file"       
+        echo "ldapsearch_time{ldapsrv=\"$srv\",metric=\"sys_time\"} $sys_time" >> "$search_file"   
+    else
+        echo "ldapsearch_error{ldapsrv=\"$srv\",metric=\"error\"} 1" >> "$search_file"
+    fi
 done
 
-cp $filetmp $filename
 
+
+cat $whoami_file $search_file > $final_file
+echo ""
+cat  $final_file
+echo "" 
+echo "FIN DU SCRIPT"
+echo "" 
+echo "" 
 sleep 1
-
-done

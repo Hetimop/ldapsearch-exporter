@@ -2,12 +2,12 @@ version: '3.9'
 
 services:
   ldapsearch-exporter:
-    image: hetimop/ldapsearch-exporter
+    image: hetimop/ldapsearch-exporter:v1.0
     container_name: ldapsearch-exporter
     environment:
       - METRICS_PORT=9008 
-      - LDAPSRV="ldap://192.168.0.62:389" "ldap://192.168.0.63:389"
-      - FILTRES="uid=jean*"
+      - SRVLDAP="ldap://192.168.0.62:389" "ldap://192.168.0.63:389"
+      - FILTRE="uid=test*"
     ports:
       - "9008:9008" 
     deploy:
